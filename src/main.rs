@@ -2,17 +2,15 @@ extern crate cargo;
 extern crate petgraph;
 extern crate rustc_serialize;
 
+mod common;
+mod graph;
+
 use cargo::{Config, CliResult};
-use cargo::core::{Source, PackageId, Package, Resolve};
-use cargo::core::dependency::Kind;
-use cargo::core::registry::PackageRegistry;
-use cargo::core::resolver::Method;
-use cargo::ops;
-use cargo::util::{important_paths, CargoResult};
-use cargo::sources::path::PathSource;
-use std::collections::{HashSet, HashMap};
+use cargo::core::PackageId;
+use std::collections::HashSet;
 use petgraph::EdgeDirection;
-use petgraph::graph::NodeIndex;
+use common::RawKind;
+use graph::Graph;
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 const USAGE: &'static str = "
@@ -39,7 +37,7 @@ Options:
 ";
 
 #[derive(RustcDecodable)]
-struct Flags {
+pub struct Flags {
     flag_version: bool,
     flag_package: Option<String>,
     flag_kind: RawKind,
@@ -57,13 +55,6 @@ struct Flags {
 enum Charset {
     Utf8,
     Ascii,
-}
-
-#[derive(RustcDecodable)]
-enum RawKind {
-    Normal,
-    Dev,
-    Build,
 }
 
 struct Symbols {
@@ -88,158 +79,29 @@ static ASCII_SYMBOLS: Symbols = Symbols {
 };
 
 fn main() {
-    cargo::execute_main_without_stdin(real_main, false, USAGE);
+    cargo::execute_main_without_stdin(tree_main, false, USAGE);
 }
 
-fn real_main(flags: Flags, config: &Config) -> CliResult<Option<()>> {
-    let Flags {
-        flag_version,
-        flag_package,
-        flag_kind,
-        flag_features,
-        flag_no_default_features,
-        flag_target,
-        flag_invert,
-        flag_charset,
-        flag_manifest_path,
-        flag_verbose,
-        flag_quiet,
-    } = flags;
-
-    if flag_version {
+fn tree_main(flags: Flags, config: &Config) -> CliResult<Option<()>> {
+    if flags.flag_version {
         println!("cargo-tree {}", env!("CARGO_PKG_VERSION"));
         return Ok(None);
     }
 
-    let flag_features = flag_features.iter()
-                                     .flat_map(|s| s.split(" "))
-                                     .map(|s| s.to_owned())
-                                     .collect();
-
-    try!(config.shell().set_verbosity(flag_verbose, flag_quiet));
-
-    let mut source = try!(source(config, flag_manifest_path));
-    let package = try!(source.root_package());
-    let mut registry = try!(registry(config, &package));
-    let resolve = try!(resolve(&mut registry,
-                               &package,
-                               flag_features,
-                               flag_no_default_features));
-    let packages = try!(ops::get_resolved_packages(&resolve, &mut registry));
-
-    let root = match flag_package {
-        Some(ref pkg) => try!(resolve.query(pkg)),
-        None => resolve.root(),
-    };
-
-    let kind = match flag_kind {
-        RawKind::Normal => Kind::Normal,
-        RawKind::Dev => Kind::Development,
-        RawKind::Build => Kind::Build,
-    };
-
-    let target = flag_target.as_ref().unwrap_or(&config.rustc_info().host);
-
-    let graph = build_graph(&resolve, &packages, package.package_id(), kind, target);
-
-    let direction = if flag_invert {
-        EdgeDirection::Incoming
-    } else {
-        EdgeDirection::Outgoing
-    };
-
-    let symbols = match flag_charset {
-        Charset::Ascii => &ASCII_SYMBOLS,
-        Charset::Utf8 => &UTF8_SYMBOLS,
-    };
-
-    print_tree(root, &graph, direction, symbols);
-
-    Ok(None)
-}
-
-fn source(config: &Config, manifest_path: Option<String>) -> CargoResult<PathSource> {
-    let root = try!(important_paths::find_root_manifest_for_cwd(manifest_path));
-    let mut source = try!(PathSource::for_path(root.parent().unwrap(), config));
-    try!(source.update());
-    Ok(source)
-}
-
-fn registry<'a>(config: &'a Config, package: &Package) -> CargoResult<PackageRegistry<'a>> {
-    let mut registry = PackageRegistry::new(config);
-    try!(registry.add_sources(&[package.package_id().source_id().clone()]));
-    Ok(registry)
-}
-
-fn resolve(registry: &mut PackageRegistry,
-           package: &Package,
-           features: Vec<String>,
-           no_default_features: bool)
-           -> CargoResult<Resolve> {
-    let resolve = try!(ops::resolve_pkg(registry, package));
-
-    let method = Method::Required {
-        dev_deps: true,
-        features: &features,
-        uses_default_features: !no_default_features,
-    };
-
-    ops::resolve_with_previous(registry, &package, method, Some(&resolve), None)
-}
-
-struct Graph<'a> {
-    graph: petgraph::Graph<&'a PackageId, ()>,
-    nodes: HashMap<&'a PackageId, NodeIndex>,
-}
-
-fn build_graph<'a>(resolve: &'a Resolve,
-                   packages: &[Package],
-                   root: &'a PackageId,
-                   kind: Kind,
-                   target: &str)
-                   -> Graph<'a> {
-    let packages = packages.iter()
-                           .map(|p| (p.package_id().clone(), p))
-                           .collect::<HashMap<_, _>>();
-
-    let mut graph = Graph {
-        graph: petgraph::Graph::new(),
-        nodes: HashMap::new(),
-    };
-    graph.nodes.insert(root, graph.graph.add_node(root));
-
-    let mut pending = vec![root];
-
-    while let Some(pkg_id) = pending.pop() {
-        let idx = graph.nodes[&pkg_id];
-
-        let kind = if pkg_id == root {
-            kind
+    common::common_main(flags, config, |flags, root, graph| {
+        let direction = if flags.flag_invert {
+            EdgeDirection::Incoming
         } else {
-            Kind::Normal
+            EdgeDirection::Outgoing
         };
 
-        let pkg = packages[pkg_id];
-        for dep_id in resolve.deps(pkg_id).unwrap() {
-            let exists = pkg.dependencies()
-                            .iter()
-                            .filter(|d| d.matches_id(dep_id))
-                            .filter(|d| d.kind() == kind)
-                            .filter(|d| d.only_for_platform().map(|t| t == target).unwrap_or(true))
-                            .next()
-                            .is_some();
-            if exists {
-                let dep_idx = {
-                    let g = &mut graph.graph;
-                    *graph.nodes.entry(dep_id).or_insert_with(|| g.add_node(dep_id))
-                };
-                graph.graph.update_edge(idx, dep_idx, ());
-                pending.push(dep_id);
-            }
-        }
-    }
+        let symbols = match flags.flag_charset {
+            Charset::Ascii => &ASCII_SYMBOLS,
+            Charset::Utf8 => &UTF8_SYMBOLS,
+        };
 
-    graph
+        print_tree(root, graph, direction, symbols);
+    })
 }
 
 fn print_tree<'a>(package: &'a PackageId,
