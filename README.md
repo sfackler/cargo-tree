@@ -109,3 +109,7 @@ libc v0.2.4
 ```
 
 More options are available - see the output of `cargo tree --help` for details.
+
+## cargo-gtree
+
+`cargo-gtree` writes the dependency graph of a crate to stdout in the DOT language for visualization usg the Graphviz package.
