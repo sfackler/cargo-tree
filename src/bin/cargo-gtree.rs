@@ -12,7 +12,6 @@ use cargo::{Config, CliResult};
 use cargo::core::dependency::Kind;
 use std::borrow::Cow;
 use std::io;
-use petgraph::EdgeDirection;
 use petgraph::graph::{NodeIndex, EdgeIndex};
 use dot::{Labeller, GraphWalk};
 use common::RawKind;
@@ -64,16 +63,8 @@ fn gtree_main(flags: Flags, config: &Config) -> CliResult<Option<()>> {
         return Ok(None);
     }
 
-    common::common_main(flags, config, |flags, root, graph| {
-        let direction = if flags.flag_invert {
-            EdgeDirection::Incoming
-        } else {
-            EdgeDirection::Outgoing
-        };
-
-        let graph = graph.extract(root, direction);
-
-        dot::render(&graph, &mut io::stdout()).unwrap();
+    common::common_main(flags, config, |_flags, _root, graph| {
+        dot::render(graph, &mut io::stdout()).unwrap();
     })
 }
 

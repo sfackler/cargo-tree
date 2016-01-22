@@ -6,6 +6,7 @@ use cargo::core::resolver::Method;
 use cargo::ops;
 use cargo::util::{important_paths, CargoResult};
 use cargo::sources::path::PathSource;
+use petgraph::EdgeDirection;
 use graph::Graph;
 
 #[derive(Copy, Clone, RustcDecodable)]
@@ -55,6 +56,14 @@ pub fn common_main<F>(flags: super::Flags, config: &Config, display_fn: F) -> Cl
     let target = flags.flag_target.as_ref().unwrap_or(&config.rustc_info().host);
 
     let graph = Graph::build(&resolve, &packages, package.package_id(), &[kind], target);
+
+    let direction = if flags.flag_invert {
+        EdgeDirection::Incoming
+    } else {
+        EdgeDirection::Outgoing
+    };
+
+    let graph = graph.extract(root, direction);
 
     display_fn(&flags, root, &graph);
 

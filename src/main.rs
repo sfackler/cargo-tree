@@ -89,31 +89,21 @@ fn tree_main(flags: Flags, config: &Config) -> CliResult<Option<()>> {
     }
 
     common::common_main(flags, config, |flags, root, graph| {
-        let direction = if flags.flag_invert {
-            EdgeDirection::Incoming
-        } else {
-            EdgeDirection::Outgoing
-        };
-
         let symbols = match flags.flag_charset {
             Charset::Ascii => &ASCII_SYMBOLS,
             Charset::Utf8 => &UTF8_SYMBOLS,
         };
 
-        print_tree(root, graph, direction, symbols);
+        print_tree(root, graph, symbols);
     })
 }
 
-fn print_tree<'a>(package: &'a PackageId,
-                  graph: &Graph<'a>,
-                  direction: EdgeDirection,
-                  symbols: &Symbols) {
+fn print_tree<'a>(package: &'a PackageId, graph: &Graph<'a>, symbols: &Symbols) {
     let mut visited_deps = HashSet::new();
     let mut levels_continue = vec![];
 
     print_dependency(package,
                      &graph,
-                     direction,
                      symbols,
                      &mut visited_deps,
                      &mut levels_continue);
@@ -121,7 +111,6 @@ fn print_tree<'a>(package: &'a PackageId,
 
 fn print_dependency<'a>(package: &'a PackageId,
                         graph: &Graph<'a>,
-                        direction: EdgeDirection,
                         symbols: &Symbols,
                         visited_deps: &mut HashSet<&'a PackageId>,
                         levels_continue: &mut Vec<bool>) {
@@ -158,19 +147,14 @@ fn print_dependency<'a>(package: &'a PackageId,
 
     // Resolve uses Hash data types internally but we want consistent output ordering
     let mut deps = graph.graph
-                        .neighbors_directed(graph.nodes[&package], direction)
+                        .neighbors_directed(graph.nodes[&package], EdgeDirection::Outgoing)
                         .map(|i| graph.graph[i])
                         .collect::<Vec<_>>();
     deps.sort();
     let mut it = deps.iter().peekable();
     while let Some(dependency) = it.next() {
         levels_continue.push(it.peek().is_some());
-        print_dependency(dependency,
-                         graph,
-                         direction,
-                         symbols,
-                         visited_deps,
-                         levels_continue);
+        print_dependency(dependency, graph, symbols, visited_deps, levels_continue);
         levels_continue.pop();
     }
 }
