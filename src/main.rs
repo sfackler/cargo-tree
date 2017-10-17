@@ -2,6 +2,9 @@ extern crate cargo;
 extern crate env_logger;
 extern crate petgraph;
 extern crate rustc_serialize;
+extern crate serde;
+#[macro_use] extern crate serde_derive;
+extern crate serde_json;
 
 use cargo::{Config, CliResult};
 use cargo::core::{PackageId, Package, Resolve, Workspace};
@@ -16,7 +19,7 @@ use cargo::util::{self, important_paths, CargoResult, Cfg, CargoError};
 use petgraph::EdgeDirection;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashSet, HashMap, BTreeMap};
 use std::collections::hash_map::Entry;
 use std::env;
 use std::str::{self, FromStr};
@@ -50,6 +53,7 @@ Options:
     --charset CHARSET       Set the character set to use in output. Valid
                             values: utf8, ascii [default: utf8]
     -f, --format FORMAT     Format string for printing dependencies
+    -j, --json              Print a JSON representation of the tree
     --manifest-path PATH    Path to the manifest to analyze
     -v, --verbose           Use verbose output
     -q, --quiet             No output printed to stdout other than the tree
@@ -71,6 +75,7 @@ struct Flags {
     flag_no_indent: bool,
     flag_all: bool,
     flag_charset: Charset,
+    flag_json: bool,
     flag_format: Option<String>,
     flag_manifest_path: Option<String>,
     flag_verbose: u32,
@@ -214,6 +219,14 @@ fn real_main(flags: Flags, config: &Config) -> CliResult {
                        flags.flag_all);
             println!("");
         }
+    } else if flags.flag_json {
+        println!("{}", serde_json::to_string_pretty(
+            &graph_to_tree(package.package_id(),
+                           &packages,
+                           &resolve,
+                           kind,
+                           &graph,
+                           direction)?).expect("serialization failed"))
     } else {
         print_tree(root,
                    kind,
@@ -317,6 +330,13 @@ struct Graph<'a> {
     nodes: HashMap<&'a PackageId, NodeIndex>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct Tree {
+    version: String,
+    features: Vec<String>,
+    dependencies: BTreeMap<String, Box<Tree>>,
+}
+
 fn build_graph<'a>(resolve: &'a Resolve,
                    packages: &'a PackageSet,
                    root: &'a PackageId,
@@ -366,6 +386,57 @@ fn build_graph<'a>(resolve: &'a Resolve,
     }
 
     Ok(graph)
+}
+
+fn graph_to_tree<'a>(package_id: &'a PackageId,
+                     packages: &'a PackageSet,
+                     resolve: &'a Resolve,
+                     kind: Kind,
+                     graph: &Graph<'a>,
+                     direction: EdgeDirection) -> CargoResult<Tree> {
+    let mut visited_deps = HashSet::new();
+    graph_to_tree_(package_id,
+                   packages,
+                   resolve,
+                   kind,
+                   graph,
+                   direction,
+                   &mut visited_deps)
+}
+
+fn graph_to_tree_<'a>(package_id: &'a PackageId,
+                      packages: &'a PackageSet,
+                      resolve: &'a Resolve,
+                      kind: Kind,
+                      graph: &Graph<'a>,
+                      direction: EdgeDirection,
+                      visited_deps: &mut HashSet<&'a PackageId>)
+                      -> CargoResult<Tree> {
+    let deps = graph.graph
+        .edges_directed(graph.nodes[package_id], direction)
+        .filter(|edge| edge.weight() == &kind)
+        .map(|edge| {
+            match direction {
+                EdgeDirection::Incoming => &graph.graph[edge.source()],
+                EdgeDirection::Outgoing => &graph.graph[edge.target()],
+            }
+        });
+
+    let mut deps_ = BTreeMap::new();
+    for dep in deps {
+        let name = packages.get(dep.id)?.name().to_owned();
+        deps_.insert(name, Box::new(graph_to_tree_(
+            dep.id, packages, resolve, kind, graph, direction, visited_deps)?));
+    }
+
+    let package = packages.get(package_id)?;
+
+    Ok(Tree {
+        version: package.version().to_string(),
+        features: resolve.features_sorted(package_id)
+            .into_iter().map(|x| x.to_owned()).collect(),
+        dependencies: deps_,
+    })
 }
 
 fn print_tree<'a>(package: &'a PackageId,
