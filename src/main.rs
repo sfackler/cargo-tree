@@ -11,9 +11,8 @@ use cargo::core::dependency::Kind;
 use cargo::core::manifest::ManifestMetadata;
 use cargo::core::package::PackageSet;
 use cargo::core::registry::PackageRegistry;
-use cargo::core::resolver::Method;
 use cargo::core::shell::Shell;
-use cargo::ops;
+use cargo::ops::{self, Packages};
 use cargo::util::{self, important_paths, CargoError, CargoResult, Cfg};
 use petgraph::EdgeDirection;
 use petgraph::graph::NodeIndex;
@@ -51,7 +50,7 @@ Options:
                             values: utf8, ascii [default: utf8]
     -f, --format FORMAT     Format string for printing dependencies
     --manifest-path PATH    Path to the manifest to analyze
-    -v, --verbose           Use verbose output
+    -v, --verbose ...       Use verbose output
     -q, --quiet             No output printed to stdout other than the tree
     --color WHEN            Coloring: auto, always, never
     --frozen                Require Cargo.lock and cache are up to date
@@ -157,9 +156,8 @@ fn real_main(flags: Flags, config: &mut Config) -> CliResult {
 
     let workspace = workspace(config, flags.flag_manifest_path)?;
     let package = workspace.current()?;
-    let mut registry = registry(config, &package)?;
+    let registry = registry(config, &package)?;
     let (packages, resolve) = resolve(
-        &mut registry,
         &workspace,
         flags.flag_features,
         flags.flag_all_features,
@@ -278,7 +276,6 @@ fn registry<'a>(config: &'a Config, package: &Package) -> CargoResult<PackageReg
 }
 
 fn resolve<'a>(
-    registry: &mut PackageRegistry,
     workspace: &'a Workspace,
     features: Vec<String>,
     all_features: bool,
@@ -292,28 +289,16 @@ fn resolve<'a>(
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
 
-    let (packages, resolve) = ops::resolve_ws(workspace)?;
+    let specs = Packages::All.into_package_id_specs(workspace)?;
 
-    let method = if all_features {
-        Method::Everything
-    } else {
-        Method::Required {
-            dev_deps: true,
-            features: &features,
-            uses_default_features: !no_default_features,
-        }
-    };
-
-    let resolve = ops::resolve_with_previous(
-        registry,
+    ops::resolve_ws_precisely(
         workspace,
-        method,
-        Some(&resolve),
         None,
-        &[],
-        false,
-    )?;
-    Ok((packages, resolve))
+        &features,
+        all_features,
+        no_default_features,
+        &specs,
+    )
 }
 
 struct Node<'a> {
