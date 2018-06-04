@@ -65,6 +65,9 @@ struct Args {
     #[structopt(long = "all-targets")]
     /// Return dependencies for all targets. By default only the host target is matched.
     all_targets: bool,
+    #[structopt(long = "no-dev-dependencies")]
+    /// Skip dev dependencies.
+    no_dev_dependencies: bool,
     #[structopt(long = "manifest-path", value_name = "PATH", parse(from_os_str))]
     /// Path to Cargo.toml
     manifest_path: Option<PathBuf>,
@@ -192,6 +195,7 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
         args.features,
         args.all_features,
         args.no_default_features,
+        args.no_dev_dependencies,
     )?;
     let ids = packages.package_ids().cloned().collect::<Vec<_>>();
     let packages = registry.get(&ids);
@@ -322,13 +326,14 @@ fn resolve<'a, 'cfg>(
     features: Option<String>,
     all_features: bool,
     no_default_features: bool,
+    no_dev_dependencies: bool,
 ) -> CargoResult<(PackageSet<'a>, Resolve)> {
     let features = Method::split_features(&features.into_iter().collect::<Vec<_>>());
 
     let (packages, resolve) = ops::resolve_ws(workspace)?;
 
     let method = Method::Required {
-        dev_deps: true,
+        dev_deps: !no_dev_dependencies,
         features: &features,
         all_features,
         uses_default_features: !no_default_features,
