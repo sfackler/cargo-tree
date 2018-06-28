@@ -14,7 +14,7 @@ use cargo::core::resolver::Method;
 use cargo::core::shell::Shell;
 use cargo::core::{Package, PackageId, Resolve, Workspace};
 use cargo::ops;
-use cargo::util::{self, important_paths, CargoResult, Cfg};
+use cargo::util::{self, important_paths, CargoResult, Cfg, Rustc};
 use cargo::{CliResult, Config};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -62,6 +62,9 @@ struct Args {
     #[structopt(long = "target", value_name = "TARGET")]
     /// Set the target triple
     target: Option<String>,
+    /// Directory for all generated artifacts
+    #[structopt(long = "target-dir", value_name = "DIRECTORY", parse(from_os_str))]
+    target_dir: Option<PathBuf>,
     #[structopt(long = "all-targets")]
     /// Return dependencies for all targets. By default only the host target is matched.
     all_targets: bool,
@@ -180,6 +183,7 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
         &args.color,
         args.frozen,
         args.locked,
+        &args.target_dir,
         &args.unstable_flags,
     )?;
 
@@ -201,15 +205,17 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
         None => package.package_id(),
     };
 
+    let rustc = config.rustc(Some(&workspace))?;
+
     let target = if args.all_targets {
         None
     } else {
-        Some(args.target.as_ref().unwrap_or(&config.rustc()?.host).as_str())
+        Some(args.target.as_ref().unwrap_or(&rustc.host).as_str())
     };
 
     let format = Pattern::new(&args.format).map_err(|e| failure::err_msg(e.to_string()))?;
 
-    let cfgs = get_cfgs(config, &args.target)?;
+    let cfgs = get_cfgs(&rustc, &args.target)?;
     let graph = build_graph(
         &resolve,
         &packages,
@@ -240,27 +246,11 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
     if args.duplicates {
         let dups = find_duplicates(&graph);
         for dup in &dups {
-            print_tree(
-                dup,
-                &graph,
-                &format,
-                direction,
-                symbols,
-                prefix,
-                args.all,
-            );
+            print_tree(dup, &graph, &format, direction, symbols, prefix, args.all);
             println!();
         }
     } else {
-        print_tree(
-            root,
-            &graph,
-            &format,
-            direction,
-            symbols,
-            prefix,
-            args.all,
-        );
+        print_tree(root, &graph, &format, direction, symbols, prefix, args.all);
     }
 
     Ok(())
@@ -284,8 +274,8 @@ fn find_duplicates<'a>(graph: &Graph<'a>) -> Vec<&'a PackageId> {
     dup_ids
 }
 
-fn get_cfgs(config: &Config, target: &Option<String>) -> CargoResult<Option<Vec<Cfg>>> {
-    let mut process = util::process(&config.rustc()?.path);
+fn get_cfgs(rustc: &Rustc, target: &Option<String>) -> CargoResult<Option<Vec<Cfg>>> {
+    let mut process = util::process(&rustc.path);
     process.arg("--print=cfg").env_remove("RUST_LOG");
     if let Some(ref s) = *target {
         process.arg("--target").arg(s);
@@ -297,9 +287,9 @@ fn get_cfgs(config: &Config, target: &Option<String>) -> CargoResult<Option<Vec<
     };
     let output = str::from_utf8(&output.stdout).unwrap();
     let lines = output.lines();
-    Ok(Some(lines
-        .map(Cfg::from_str)
-        .collect::<CargoResult<Vec<_>>>()?))
+    Ok(Some(
+        lines.map(Cfg::from_str).collect::<CargoResult<Vec<_>>>()?,
+    ))
 }
 
 fn workspace(config: &Config, manifest_path: Option<PathBuf>) -> CargoResult<Workspace> {
@@ -381,7 +371,8 @@ fn build_graph<'a>(
         let pkg = packages.get(pkg_id)?;
 
         for raw_dep_id in resolve.deps_not_replaced(pkg_id) {
-            let it = pkg.dependencies()
+            let it = pkg
+                .dependencies()
                 .iter()
                 .filter(|d| d.matches_id(raw_dep_id))
                 .filter(|d| {
@@ -469,8 +460,8 @@ fn print_dependency<'a>(
                 };
                 print!("{0}{1}{1} ", c, symbols.right);
             }
-        },
-        Prefix::None => ()
+        }
+        Prefix::None => (),
     }
 
     println!("{}{}", format.display(package.id, package.metadata), star);
