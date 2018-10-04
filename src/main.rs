@@ -287,7 +287,7 @@ fn get_cfgs(rustc: &Rustc, target: &Option<String>) -> CargoResult<Option<Vec<Cf
 
     let output = match process.exec_with_output() {
         Ok(output) => output,
-        Err(_) => return Ok(None),
+        Err(e) => return Err(e),
     };
     let output = str::from_utf8(&output.stdout).unwrap();
     let lines = output.lines();
