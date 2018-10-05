@@ -190,7 +190,12 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
         &args.unstable_flags,
     )?;
 
-    let workspace = workspace(config, args.manifest_path)?;
+    let package = args.package.clone();
+    let manifest_path = args.manifest_path.or_else(|| {
+        Some(config.cwd().join(package?).join("Cargo.toml"))
+    });
+
+    let workspace = workspace(config, manifest_path)?;
     let package = workspace.current()?;
     let mut registry = registry(config, &package)?;
     let (packages, resolve) = resolve(
