@@ -2,8 +2,6 @@ extern crate cargo;
 extern crate env_logger;
 extern crate failure;
 extern crate petgraph;
-
-#[macro_use]
 extern crate structopt;
 
 use cargo::core::dependency::Kind;
@@ -63,7 +61,11 @@ struct Args {
     /// Set the target triple
     target: Option<String>,
     /// Directory for all generated artifacts
-    #[structopt(long = "target-dir", value_name = "DIRECTORY", parse(from_os_str))]
+    #[structopt(
+        long = "target-dir",
+        value_name = "DIRECTORY",
+        parse(from_os_str)
+    )]
     target_dir: Option<PathBuf>,
     #[structopt(long = "all-targets")]
     /// Return dependencies for all targets. By default only the host target is matched.
@@ -71,7 +73,11 @@ struct Args {
     #[structopt(long = "no-dev-dependencies")]
     /// Skip dev dependencies.
     no_dev_dependencies: bool,
-    #[structopt(long = "manifest-path", value_name = "PATH", parse(from_os_str))]
+    #[structopt(
+        long = "manifest-path",
+        value_name = "PATH",
+        parse(from_os_str)
+    )]
     /// Path to Cargo.toml
     manifest_path: Option<PathBuf>,
     #[structopt(long = "invert", short = "i")]
@@ -89,10 +95,19 @@ struct Args {
     #[structopt(long = "duplicate", short = "d")]
     /// Show only dependencies which come in multiple versions (implies -i)
     duplicates: bool,
-    #[structopt(long = "charset", value_name = "CHARSET", default_value = "utf8")]
+    #[structopt(
+        long = "charset",
+        value_name = "CHARSET",
+        default_value = "utf8"
+    )]
     /// Character set to use in output: utf8, ascii
     charset: Charset,
-    #[structopt(long = "format", short = "f", value_name = "FORMAT", default_value = "{p}")]
+    #[structopt(
+        long = "format",
+        short = "f",
+        value_name = "FORMAT",
+        default_value = "{p}"
+    )]
     /// Format string used for printing dependencies
     format: String,
     #[structopt(long = "verbose", short = "v", parse(from_occurrences))]

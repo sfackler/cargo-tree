@@ -27,7 +27,7 @@ jobs:
   build:
     working_directory: ~/build
     docker:
-      - image: rust:1.26.0
+      - image: rust:1.30.0
     steps:
       - checkout
       - run: apt-get update
