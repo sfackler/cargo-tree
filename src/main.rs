@@ -436,7 +436,9 @@ fn print_tree<'a>(
     let mut visited_deps = HashSet::new();
     let mut levels_continue = vec![];
 
-    let node = &graph.graph[graph.nodes[&package]];
+    let package = graph.nodes.get(package)
+      .expect(&format!("package {} not found, try specifying an explicit --target", package));
+    let node = &graph.graph[*package];
     print_dependency(
         node,
         &graph,
