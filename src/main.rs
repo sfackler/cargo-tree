@@ -217,7 +217,7 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
         args.no_dev_dependencies,
     )?;
     let ids = packages.package_ids().cloned().collect::<Vec<_>>();
-    let packages = registry.get(&ids);
+    let packages = registry.get(&ids)?;
 
     let root = match args.package {
         Some(ref pkg) => resolve.query(pkg)?,
@@ -380,7 +380,7 @@ fn build_graph<'a>(
     };
     let node = Node {
         id: root,
-        metadata: packages.get(root)?.manifest().metadata(),
+        metadata: packages.get_one(root)?.manifest().metadata(),
     };
     graph.nodes.insert(root, graph.graph.add_node(node));
 
@@ -388,7 +388,7 @@ fn build_graph<'a>(
 
     while let Some(pkg_id) = pending.pop() {
         let idx = graph.nodes[&pkg_id];
-        let pkg = packages.get(pkg_id)?;
+        let pkg = packages.get_one(pkg_id)?;
 
         for raw_dep_id in resolve.deps_not_replaced(pkg_id) {
             let it = pkg
@@ -411,7 +411,7 @@ fn build_graph<'a>(
                         pending.push(dep_id);
                         let node = Node {
                             id: dep_id,
-                            metadata: packages.get(dep_id)?.manifest().metadata(),
+                            metadata: packages.get_one(dep_id)?.manifest().metadata(),
                         };
                         *e.insert(graph.graph.add_node(node))
                     }
