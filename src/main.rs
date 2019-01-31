@@ -217,7 +217,7 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
         args.no_default_features,
         args.no_dev_dependencies,
     )?;
-    let ids = packages.package_ids().cloned().collect::<Vec<_>>();
+    let ids = packages.package_ids().collect::<Vec<_>>();
     let packages = registry.get(&ids)?;
 
     let root = match args.package {
@@ -270,13 +270,13 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
             println!();
         }
     } else {
-        print_tree(root, &graph, &format, direction, symbols, prefix, args.all)?;
+        print_tree(&root, &graph, &format, direction, symbols, prefix, args.all)?;
     }
 
     Ok(())
 }
 
-fn find_duplicates<'a>(graph: &Graph<'a>) -> Vec<&'a PackageId> {
+fn find_duplicates<'a>(graph: &Graph<'a>) -> Vec<PackageId> {
     let mut counts = HashMap::new();
 
     // Count by name only. Source and version are irrelevant here.
@@ -322,7 +322,7 @@ fn workspace(config: &Config, manifest_path: Option<PathBuf>) -> CargoResult<Wor
 
 fn registry<'a>(config: &'a Config, package: &Package) -> CargoResult<PackageRegistry<'a>> {
     let mut registry = PackageRegistry::new(config)?;
-    registry.add_sources(&[package.package_id().source_id().clone()])?;
+    registry.add_sources(Some(package.package_id().source_id().clone()))?;
     Ok(registry)
 }
 
@@ -359,19 +359,19 @@ fn resolve<'a, 'cfg>(
 }
 
 struct Node<'a> {
-    id: &'a PackageId,
+    id: PackageId,
     metadata: &'a ManifestMetadata,
 }
 
 struct Graph<'a> {
     graph: petgraph::Graph<Node<'a>, Kind>,
-    nodes: HashMap<&'a PackageId, NodeIndex>,
+    nodes: HashMap<PackageId, NodeIndex>,
 }
 
 fn build_graph<'a>(
     resolve: &'a Resolve,
     packages: &'a PackageSet,
-    root: &'a PackageId,
+    root: PackageId,
     target: Option<&str>,
     cfgs: Option<&[Cfg]>,
 ) -> CargoResult<Graph<'a>> {
@@ -380,10 +380,10 @@ fn build_graph<'a>(
         nodes: HashMap::new(),
     };
     let node = Node {
-        id: root,
+        id: root.clone(),
         metadata: packages.get_one(root)?.manifest().metadata(),
     };
-    graph.nodes.insert(root, graph.graph.add_node(node));
+    graph.nodes.insert(root.clone(), graph.graph.add_node(node));
 
     let mut pending = vec![root];
 
@@ -462,7 +462,7 @@ fn print_dependency<'a>(
     format: &Pattern,
     direction: EdgeDirection,
     symbols: &Symbols,
-    visited_deps: &mut HashSet<&'a PackageId>,
+    visited_deps: &mut HashSet<PackageId>,
     levels_continue: &mut Vec<bool>,
     prefix: Prefix,
     all: bool,
@@ -490,7 +490,7 @@ fn print_dependency<'a>(
         Prefix::None => (),
     }
 
-    println!("{}{}", format.display(package.id, package.metadata), star);
+    println!("{}{}", format.display(&package.id, package.metadata), star);
 
     if !new {
         return;
@@ -559,7 +559,7 @@ fn print_dependency_kind<'a>(
     format: &Pattern,
     direction: EdgeDirection,
     symbols: &Symbols,
-    visited_deps: &mut HashSet<&'a PackageId>,
+    visited_deps: &mut HashSet<PackageId>,
     levels_continue: &mut Vec<bool>,
     prefix: Prefix,
     all: bool,
