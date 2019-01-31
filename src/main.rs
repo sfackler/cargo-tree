@@ -1,5 +1,6 @@
 extern crate cargo;
 extern crate env_logger;
+#[macro_use]
 extern crate failure;
 extern crate petgraph;
 extern crate structopt;
@@ -436,8 +437,10 @@ fn print_tree<'a>(
     let mut visited_deps = HashSet::new();
     let mut levels_continue = vec![];
 
-    let package = graph.nodes.get(package)
-        .ok_or(failure::err_msg(format!("package {} not found, try specifying an explicit --target", package)))?;
+    let package = match graph.nodes.get(package) {
+        Some(package) => package,
+        None => bail!("package {} not found", package),
+    };
     let node = &graph.graph[*package];
     print_dependency(
         node,
