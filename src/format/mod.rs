@@ -1,9 +1,9 @@
-use cargo::core::PackageId;
 use cargo::core::manifest::ManifestMetadata;
+use cargo::core::PackageId;
 use std::error::Error;
 use std::fmt;
 
-use format::parse::{Parser, RawChunk};
+use crate::format::parse::{Parser, RawChunk};
 
 mod parse;
 
@@ -17,7 +17,7 @@ enum Chunk {
 pub struct Pattern(Vec<Chunk>);
 
 impl Pattern {
-    pub fn new(format: &str) -> Result<Pattern, Box<Error>> {
+    pub fn new(format: &str) -> Result<Pattern, Box<dyn Error>> {
         let mut chunks = vec![];
 
         for raw in Parser::new(format) {
@@ -57,17 +57,21 @@ pub struct Display<'a> {
 }
 
 impl<'a> fmt::Display for Display<'a> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         for chunk in &self.pattern.0 {
             match *chunk {
-                Chunk::Raw(ref s) => try!(fmt.write_str(s)),
-                Chunk::Package => try!(write!(fmt, "{}", self.package)),
-                Chunk::License => if let Some(ref license) = self.metadata.license {
-                    try!(write!(fmt, "{}", license))
-                },
-                Chunk::Repository => if let Some(ref repository) = self.metadata.repository {
-                    try!(write!(fmt, "{}", repository))
-                },
+                Chunk::Raw(ref s) => fmt.write_str(s)?,
+                Chunk::Package => write!(fmt, "{}", self.package)?,
+                Chunk::License => {
+                    if let Some(ref license) = self.metadata.license {
+                        write!(fmt, "{}", license)?
+                    }
+                }
+                Chunk::Repository => {
+                    if let Some(ref repository) = self.metadata.repository {
+                        write!(fmt, "{}", repository)?
+                    }
+                }
             }
         }
 

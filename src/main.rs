@@ -1,10 +1,3 @@
-extern crate cargo;
-extern crate env_logger;
-#[macro_use]
-extern crate failure;
-extern crate petgraph;
-extern crate structopt;
-
 use cargo::core::dependency::Kind;
 use cargo::core::manifest::ManifestMetadata;
 use cargo::core::package::PackageSet;
@@ -15,6 +8,7 @@ use cargo::core::{Package, PackageId, Resolve, Workspace};
 use cargo::ops;
 use cargo::util::{self, important_paths, CargoResult, Cfg, Rustc};
 use cargo::{CliResult, Config};
+use failure::bail;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::EdgeDirection;
@@ -25,7 +19,7 @@ use std::str::{self, FromStr};
 use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
-use format::Pattern;
+use crate::format::Pattern;
 
 mod format;
 
@@ -62,11 +56,7 @@ struct Args {
     /// Set the target triple
     target: Option<String>,
     /// Directory for all generated artifacts
-    #[structopt(
-        long = "target-dir",
-        value_name = "DIRECTORY",
-        parse(from_os_str)
-    )]
+    #[structopt(long = "target-dir", value_name = "DIRECTORY", parse(from_os_str))]
     target_dir: Option<PathBuf>,
     #[structopt(long = "all-targets")]
     /// Return dependencies for all targets. By default only the host target is matched.
@@ -74,11 +64,7 @@ struct Args {
     #[structopt(long = "no-dev-dependencies")]
     /// Skip dev dependencies.
     no_dev_dependencies: bool,
-    #[structopt(
-        long = "manifest-path",
-        value_name = "PATH",
-        parse(from_os_str)
-    )]
+    #[structopt(long = "manifest-path", value_name = "PATH", parse(from_os_str))]
     /// Path to Cargo.toml
     manifest_path: Option<PathBuf>,
     #[structopt(long = "invert", short = "i")]
@@ -96,11 +82,7 @@ struct Args {
     #[structopt(long = "duplicate", short = "d")]
     /// Show only dependencies which come in multiple versions (implies -i)
     duplicates: bool,
-    #[structopt(
-        long = "charset",
-        value_name = "CHARSET",
-        default_value = "utf8"
-    )]
+    #[structopt(long = "charset", value_name = "CHARSET", default_value = "utf8")]
     /// Character set to use in output: utf8, ascii
     charset: Charset,
     #[structopt(
@@ -312,7 +294,7 @@ fn get_cfgs(rustc: &Rustc, target: &Option<String>) -> CargoResult<Option<Vec<Cf
     ))
 }
 
-fn workspace(config: &Config, manifest_path: Option<PathBuf>) -> CargoResult<Workspace> {
+fn workspace(config: &Config, manifest_path: Option<PathBuf>) -> CargoResult<Workspace<'_>> {
     let root = match manifest_path {
         Some(path) => path,
         None => important_paths::find_root_manifest_for_wd(config.cwd())?,
@@ -370,7 +352,7 @@ struct Graph<'a> {
 
 fn build_graph<'a>(
     resolve: &'a Resolve,
-    packages: &'a PackageSet,
+    packages: &'a PackageSet<'_>,
     root: PackageId,
     target: Option<&str>,
     cfgs: Option<&[Cfg]>,
