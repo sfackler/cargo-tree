@@ -265,11 +265,11 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
     if args.duplicates {
         let dups = find_duplicates(&graph);
         for dup in &dups {
-            print_tree(dup, &graph, &format, direction, symbols, prefix, args.all);
+            print_tree(dup, &graph, &format, direction, symbols, prefix, args.all)?;
             println!();
         }
     } else {
-        print_tree(root, &graph, &format, direction, symbols, prefix, args.all);
+        print_tree(root, &graph, &format, direction, symbols, prefix, args.all)?;
     }
 
     Ok(())
@@ -432,11 +432,13 @@ fn print_tree<'a>(
     symbols: &Symbols,
     prefix: Prefix,
     all: bool,
-) {
+) -> CargoResult<()> {
     let mut visited_deps = HashSet::new();
     let mut levels_continue = vec![];
 
-    let node = &graph.graph[graph.nodes[&package]];
+    let package = graph.nodes.get(package)
+        .ok_or(failure::err_msg(format!("package {} not found, try specifying an explicit --target", package)))?;
+    let node = &graph.graph[*package];
     print_dependency(
         node,
         &graph,
@@ -448,6 +450,7 @@ fn print_tree<'a>(
         prefix,
         all,
     );
+    Ok(())
 }
 
 fn print_dependency<'a>(
