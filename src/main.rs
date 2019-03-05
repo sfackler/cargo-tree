@@ -1,3 +1,4 @@
+use cargo::core::summary::FeatureMap;
 use cargo::core::dependency::Kind;
 use cargo::core::manifest::ManifestMetadata;
 use cargo::core::package::PackageSet;
@@ -111,6 +112,9 @@ struct Args {
     #[structopt(short = "Z", value_name = "FLAG")]
     /// Unstable (nightly-only) flags to Cargo
     unstable_flags: Vec<String>,
+    #[structopt(long = "show-feature-space")]
+    /// Display feature space for the dependency tree
+    show_feature_space: bool
 }
 
 enum Charset {
@@ -248,11 +252,11 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
     if args.duplicates {
         let dups = find_duplicates(&graph);
         for dup in &dups {
-            print_tree(dup, &graph, &format, direction, symbols, prefix, args.all)?;
+            print_tree(dup, &graph, &format, direction, symbols, prefix, args.all, args.show_feature_space)?;
             println!();
         }
     } else {
-        print_tree(&root, &graph, &format, direction, symbols, prefix, args.all)?;
+        print_tree(&root, &graph, &format, direction, symbols, prefix, args.all, args.show_feature_space)?;
     }
 
     Ok(())
@@ -343,6 +347,8 @@ fn resolve<'a, 'cfg>(
 struct Node<'a> {
     id: PackageId,
     metadata: &'a ManifestMetadata,
+    enabled_features: &'a HashSet<String>,
+    feature_space: &'a FeatureMap
 }
 
 struct Graph<'a> {
@@ -364,6 +370,8 @@ fn build_graph<'a>(
     let node = Node {
         id: root.clone(),
         metadata: packages.get_one(root)?.manifest().metadata(),
+        enabled_features: resolve.features(root),
+        feature_space: packages.get_one(root)?.summary().features(),
     };
     graph.nodes.insert(root.clone(), graph.graph.add_node(node));
 
@@ -395,6 +403,8 @@ fn build_graph<'a>(
                         let node = Node {
                             id: dep_id,
                             metadata: packages.get_one(dep_id)?.manifest().metadata(),
+                            enabled_features: resolve.features(dep_id),
+                            feature_space: packages.get_one(dep_id)?.summary().features(),
                         };
                         *e.insert(graph.graph.add_node(node))
                     }
@@ -415,6 +425,7 @@ fn print_tree<'a>(
     symbols: &Symbols,
     prefix: Prefix,
     all: bool,
+    show_feature_space: bool,
 ) -> CargoResult<()> {
     let mut visited_deps = HashSet::new();
     let mut levels_continue = vec![];
@@ -434,6 +445,7 @@ fn print_tree<'a>(
         &mut levels_continue,
         prefix,
         all,
+        show_feature_space,
     );
     Ok(())
 }
@@ -448,6 +460,7 @@ fn print_dependency<'a>(
     levels_continue: &mut Vec<bool>,
     prefix: Prefix,
     all: bool,
+    show_feature_space: bool,
 ) {
     let new = all || visited_deps.insert(package.id);
     let star = if new { "" } else { " (*)" };
@@ -472,7 +485,16 @@ fn print_dependency<'a>(
         Prefix::None => (),
     }
 
-    println!("{}{}", format.display(&package.id, package.metadata), star);
+    if show_feature_space {
+        print!("{}{} Enabled Features: {:?}", format.display(&package.id, package.metadata), star, package.enabled_features);
+        print!(" Feature Space: [");
+        for (key, _) in package.feature_space {
+            print!("{:?}, ", key);
+        }
+        println!("]")
+    } else {
+        println!("{}{}", format.display(&package.id, package.metadata), star);
+    }
 
     if !new {
         return;
@@ -507,6 +529,7 @@ fn print_dependency<'a>(
         levels_continue,
         prefix,
         all,
+        show_feature_space,
     );
     print_dependency_kind(
         Kind::Build,
@@ -519,6 +542,7 @@ fn print_dependency<'a>(
         levels_continue,
         prefix,
         all,
+        show_feature_space,
     );
     print_dependency_kind(
         Kind::Development,
@@ -531,6 +555,7 @@ fn print_dependency<'a>(
         levels_continue,
         prefix,
         all,
+        show_feature_space,
     );
 }
 
@@ -545,6 +570,7 @@ fn print_dependency_kind<'a>(
     levels_continue: &mut Vec<bool>,
     prefix: Prefix,
     all: bool,
+    show_feature_space: bool,
 ) {
     if deps.is_empty() {
         return;
@@ -582,6 +608,7 @@ fn print_dependency_kind<'a>(
             levels_continue,
             prefix,
             all,
+            show_feature_space,
         );
         levels_continue.pop();
     }
