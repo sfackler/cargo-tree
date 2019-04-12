@@ -1,5 +1,5 @@
 deps_key: &DEPS_KEY
-  key: dependencies-1.33-{{ checksum "Cargo.lock" }}
+  key: dependencies-1.34-{{ checksum "Cargo.lock" }}
 
 restore_registry: &RESTORE_REGISTRY
   restore_cache:
