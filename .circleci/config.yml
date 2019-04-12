@@ -25,9 +25,8 @@ save_deps: &SAVE_DEPS
 version: 2
 jobs:
   build:
-    working_directory: ~/build
     docker:
-      - image: rust:1.33.0
+      - image: rust:1.34.0
     steps:
       - checkout
       - run: apt-get update
