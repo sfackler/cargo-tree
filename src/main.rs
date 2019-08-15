@@ -207,7 +207,7 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
         None => package.package_id(),
     };
 
-    let rustc = config.rustc(Some(&workspace))?;
+    let rustc = config.load_global_rustc(Some(&workspace))?;
 
     let target = if args.all_targets {
         None
