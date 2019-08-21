@@ -16,6 +16,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::{self, FromStr};
+use std::rc::Rc;
 use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
@@ -108,6 +109,9 @@ struct Args {
     #[structopt(long = "locked")]
     /// Require Cargo.lock is up to date
     locked: bool,
+    #[structopt(long = "offline")]
+    /// Do not access the network
+    offline: bool,
     #[structopt(short = "Z", value_name = "FLAG")]
     /// Unstable (nightly-only) flags to Cargo
     unstable_flags: Vec<String>,
@@ -184,6 +188,7 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
         &args.color,
         args.frozen,
         args.locked,
+        args.offline,
         &args.target_dir,
         &args.unstable_flags,
     )?;
@@ -207,7 +212,7 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
         None => package.package_id(),
     };
 
-    let rustc = config.rustc(Some(&workspace))?;
+    let rustc = config.load_global_rustc(Some(&workspace))?;
 
     let target = if args.all_targets {
         None
@@ -322,7 +327,7 @@ fn resolve<'a, 'cfg>(
 
     let method = Method::Required {
         dev_deps: !no_dev_dependencies,
-        features: &features,
+        features: Rc::new(features),
         all_features,
         uses_default_features: !no_default_features,
     };
@@ -334,7 +339,6 @@ fn resolve<'a, 'cfg>(
         Some(&resolve),
         None,
         &[],
-        true,
         true,
     )?;
     Ok((packages, resolve))
