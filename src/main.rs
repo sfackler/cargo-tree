@@ -1,5 +1,6 @@
 use cargo::core::dependency::Kind;
 use cargo::core::manifest::ManifestMetadata;
+use cargo::core::maybe_allow_nightly_features;
 use cargo::core::package::PackageSet;
 use cargo::core::registry::PackageRegistry;
 use cargo::core::resolver::Method;
@@ -192,6 +193,9 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
         &args.target_dir,
         &args.unstable_flags,
     )?;
+
+    // Needed to allow nightly features
+    maybe_allow_nightly_features();
 
     let workspace = workspace(config, args.manifest_path)?;
     let package = workspace.current()?;
