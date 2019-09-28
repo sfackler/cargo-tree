@@ -30,11 +30,9 @@ mod format;
 enum Opts {
     #[structopt(
         name = "tree",
-        raw(
-            setting = "AppSettings::UnifiedHelpMessage",
-            setting = "AppSettings::DeriveDisplayOrder",
-            setting = "AppSettings::DontCollapseArgsInUsage"
-        )
+        setting = AppSettings::UnifiedHelpMessage,
+        setting = AppSettings::DeriveDisplayOrder,
+        setting = AppSettings::DontCollapseArgsInUsage
     )]
     /// Display a tree visualization of a dependency graph
     Tree(Args),
