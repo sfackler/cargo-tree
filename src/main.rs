@@ -14,7 +14,7 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::EdgeDirection;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::str::{self, FromStr};
 use std::rc::Rc;
@@ -64,6 +64,9 @@ struct Args {
     #[structopt(long = "no-dev-dependencies")]
     /// Skip dev dependencies.
     no_dev_dependencies: bool,
+    #[structopt(long = "depth", short = "D", value_name = "DEPTH")]
+    /// Max display depth of the dependency tree
+    depth: Option<usize>,
     #[structopt(long = "manifest-path", value_name = "PATH", parse(from_os_str))]
     /// Path to Cargo.toml
     manifest_path: Option<PathBuf>,
@@ -77,7 +80,7 @@ struct Args {
     /// Display the dependencies as a list (rather than a tree), but prefixed with the depth
     prefix_depth: bool,
     #[structopt(long = "all", short = "a")]
-    /// Don't truncate dependencies that have already been displayed
+    /// Don't truncate dependencies that are farther down the dependency tree
     all: bool,
     #[structopt(long = "duplicate", short = "d")]
     /// Show only dependencies which come in multiple versions (implies -i)
@@ -231,6 +234,11 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
         package.package_id(),
         target,
         cfgs.as_ref().map(|r| &**r),
+        if args.duplicates || args.package.is_some() {
+            None
+        } else {
+            args.depth
+        },
     )?;
 
     let direction = if args.invert || args.duplicates {
@@ -255,11 +263,15 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
     if args.duplicates {
         let dups = find_duplicates(&graph);
         for dup in &dups {
-            print_tree(dup, &graph, &format, direction, symbols, prefix, args.all)?;
+            print_tree(
+                dup, &graph, &format, direction, symbols, prefix, args.all, args.depth,
+            )?;
             println!();
         }
     } else {
-        print_tree(&root, &graph, &format, direction, symbols, prefix, args.all)?;
+        print_tree(
+            &root, &graph, &format, direction, symbols, prefix, args.all, args.depth,
+        )?;
     }
 
     Ok(())
@@ -349,6 +361,8 @@ fn resolve<'a, 'cfg>(
 struct Node<'a> {
     id: PackageId,
     metadata: &'a ManifestMetadata,
+    depth_first_seen: usize,
+    is_duplicate: bool,
 }
 
 struct Graph<'a> {
@@ -362,6 +376,7 @@ fn build_graph<'a>(
     root: PackageId,
     target: Option<&str>,
     cfgs: Option<&[Cfg]>,
+    max_depth: Option<usize>,
 ) -> CargoResult<Graph<'a>> {
     let mut graph = Graph {
         graph: petgraph::Graph::new(),
@@ -370,12 +385,21 @@ fn build_graph<'a>(
     let node = Node {
         id: root.clone(),
         metadata: packages.get_one(root)?.manifest().metadata(),
+        depth_first_seen: 0,
+        is_duplicate: false,
     };
     graph.nodes.insert(root.clone(), graph.graph.add_node(node));
 
-    let mut pending = vec![root];
+    if Some(0) == max_depth {
+        return Ok(graph);
+    }
 
-    while let Some(pkg_id) = pending.pop() {
+    let mut pending = VecDeque::new();
+    pending.push_back(root);
+
+    let mut current_depth: usize = 1;
+
+    while let Some(pkg_id) = pending.pop_front() {
         let idx = graph.nodes[&pkg_id];
         let pkg = packages.get_one(pkg_id)?;
 
@@ -395,12 +419,28 @@ fn build_graph<'a>(
             };
             for dep in it {
                 let dep_idx = match graph.nodes.entry(dep_id) {
-                    Entry::Occupied(e) => *e.get(),
+                    Entry::Occupied(e) => {
+                        let key = *e.get();
+
+                        let mut node = &mut graph.graph[key];
+                        node.is_duplicate = true;
+
+                        key
+                    }
                     Entry::Vacant(e) => {
-                        pending.push(dep_id);
+                        if let Some(depth) = max_depth {
+                            if current_depth < depth {
+                                pending.push_back(dep_id);
+                            }
+                        } else {
+                            pending.push_back(dep_id);
+                        }
+
                         let node = Node {
                             id: dep_id,
                             metadata: packages.get_one(dep_id)?.manifest().metadata(),
+                            depth_first_seen: current_depth,
+                            is_duplicate: false,
                         };
                         *e.insert(graph.graph.add_node(node))
                     }
@@ -408,6 +448,7 @@ fn build_graph<'a>(
                 graph.graph.add_edge(idx, dep_idx, dep.kind());
             }
         }
+        current_depth += 1;
     }
 
     Ok(graph)
@@ -421,8 +462,8 @@ fn print_tree<'a>(
     symbols: &Symbols,
     prefix: Prefix,
     all: bool,
+    max_depth: Option<usize>,
 ) -> CargoResult<()> {
-    let mut visited_deps = HashSet::new();
     let mut levels_continue = vec![];
 
     let package = match graph.nodes.get(package) {
@@ -436,10 +477,10 @@ fn print_tree<'a>(
         format,
         direction,
         symbols,
-        &mut visited_deps,
         &mut levels_continue,
         prefix,
         all,
+        max_depth,
     );
     Ok(())
 }
@@ -450,12 +491,13 @@ fn print_dependency<'a>(
     format: &Pattern,
     direction: EdgeDirection,
     symbols: &Symbols,
-    visited_deps: &mut HashSet<PackageId>,
     levels_continue: &mut Vec<bool>,
     prefix: Prefix,
     all: bool,
+    max_depth: Option<usize>,
 ) {
-    let new = all || visited_deps.insert(package.id);
+    let new = all || (!package.is_duplicate || levels_continue.len() <= package.depth_first_seen);
+
     let star = if new { "" } else { " (*)" };
 
     match prefix {
@@ -480,7 +522,7 @@ fn print_dependency<'a>(
 
     println!("{}{}", format.display(&package.id, package.metadata), star);
 
-    if !new {
+    if !new || max_depth.map_or_else(|| false, |d| levels_continue.len() >= d) {
         return;
     }
 
@@ -509,10 +551,10 @@ fn print_dependency<'a>(
         format,
         direction,
         symbols,
-        visited_deps,
         levels_continue,
         prefix,
         all,
+        max_depth,
     );
     print_dependency_kind(
         Kind::Build,
@@ -521,10 +563,10 @@ fn print_dependency<'a>(
         format,
         direction,
         symbols,
-        visited_deps,
         levels_continue,
         prefix,
         all,
+        max_depth,
     );
     print_dependency_kind(
         Kind::Development,
@@ -533,10 +575,10 @@ fn print_dependency<'a>(
         format,
         direction,
         symbols,
-        visited_deps,
         levels_continue,
         prefix,
         all,
+        max_depth,
     );
 }
 
@@ -547,10 +589,10 @@ fn print_dependency_kind<'a>(
     format: &Pattern,
     direction: EdgeDirection,
     symbols: &Symbols,
-    visited_deps: &mut HashSet<PackageId>,
     levels_continue: &mut Vec<bool>,
     prefix: Prefix,
     all: bool,
+    max_depth: Option<usize>,
 ) {
     if deps.is_empty() {
         return;
@@ -584,10 +626,10 @@ fn print_dependency_kind<'a>(
             format,
             direction,
             symbols,
-            visited_deps,
             levels_continue,
             prefix,
             all,
+            max_depth,
         );
         levels_continue.pop();
     }
