@@ -10,6 +10,7 @@ enum Chunk {
     Package,
     License,
     Repository,
+    Feature,
 }
 
 pub struct Pattern(Vec<Chunk>);
@@ -24,6 +25,7 @@ impl Pattern {
                 RawChunk::Argument("p") => Chunk::Package,
                 RawChunk::Argument("l") => Chunk::License,
                 RawChunk::Argument("r") => Chunk::Repository,
+                RawChunk::Argument("f") => Chunk::Feature,
                 RawChunk::Argument(ref a) => {
                     return Err(anyhow!("unsupported pattern `{}`", a));
                 }
@@ -76,6 +78,11 @@ impl<'a> fmt::Display for Display<'a> {
                     if let Some(ref repository) = self.package.repository {
                         write!(fmt, "{}", repository)?
                     }
+                }
+                Chunk::Feature => {
+                    let mut features : Vec<_> = self.package.features.keys().cloned().collect();
+                    features.sort();
+                    write!(fmt, "{}", features.join(","))?
                 }
             }
         }
