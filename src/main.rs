@@ -7,12 +7,14 @@ use cargo::core::resolver::ResolveOpts;
 use cargo::core::shell::Shell;
 use cargo::core::{Package, PackageId, Resolve, Workspace};
 use cargo::ops;
-use cargo::util::{self, important_paths, CargoResult, Cfg, Rustc};
+use cargo::util::{important_paths, CargoResult, Rustc};
 use cargo::{CliResult, Config};
+use cargo_platform::Cfg;
 use failure::bail;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::EdgeDirection;
+
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -218,7 +220,10 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
     let target = if args.all_targets {
         None
     } else {
-        Some(args.target.as_ref().unwrap_or(&rustc.host).as_str())
+        Some(match &args.target {
+            Some(s) => s,
+            None => rustc.host.as_str(),
+        })
     };
 
     let format = Pattern::new(&args.format).map_err(|e| failure::err_msg(e.to_string()))?;
@@ -277,7 +282,7 @@ fn find_duplicates<'a>(graph: &Graph<'a>) -> Vec<PackageId> {
 }
 
 fn get_cfgs(rustc: &Rustc, target: &Option<String>) -> CargoResult<Vec<Cfg>> {
-    let mut process = util::process(&rustc.path);
+    let mut process = rustc.process();
     process.arg("--print=cfg").env_remove("RUST_LOG");
     if let Some(ref s) = *target {
         process.arg("--target").arg(s);
@@ -285,7 +290,14 @@ fn get_cfgs(rustc: &Rustc, target: &Option<String>) -> CargoResult<Vec<Cfg>> {
 
     let output = process.exec_with_output()?;
     let stdout = String::from_utf8(output.stdout)?;
-    stdout.lines().map(Cfg::from_str).collect()
+    let mut out = Vec::new();
+    for line in stdout.lines() {
+        match Cfg::from_str(line) {
+            Ok(cfg) => out.push(cfg),
+            Err(err) => return Err(err.into()),
+        }
+    }
+    Ok(out)
 }
 
 fn workspace(config: &Config, manifest_path: Option<PathBuf>) -> CargoResult<Workspace<'_>> {

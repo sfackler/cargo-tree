@@ -9,7 +9,8 @@ repository = "https://github.com/sfackler/cargo-tree"
 readme = "README.md"
 
 [dependencies]
-cargo = "0.40"
+cargo = "0.41"
+cargo-platform = "0.1"
 env_logger = "0.7"
 failure = "0.1"
 petgraph = "0.4"
