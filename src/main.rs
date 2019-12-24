@@ -3,21 +3,22 @@ use cargo::core::manifest::ManifestMetadata;
 use cargo::core::maybe_allow_nightly_features;
 use cargo::core::package::PackageSet;
 use cargo::core::registry::PackageRegistry;
-use cargo::core::resolver::Method;
+use cargo::core::resolver::ResolveOpts;
 use cargo::core::shell::Shell;
 use cargo::core::{Package, PackageId, Resolve, Workspace};
 use cargo::ops;
-use cargo::util::{self, important_paths, CargoResult, Cfg, Rustc};
+use cargo::util::{important_paths, CargoResult, Rustc};
 use cargo::{CliResult, Config};
+use cargo_platform::Cfg;
 use failure::bail;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::EdgeDirection;
+
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::{self, FromStr};
-use std::rc::Rc;
 use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
@@ -176,7 +177,7 @@ fn main() {
 
     if let Err(e) = real_main(args, &mut config) {
         let mut shell = Shell::new();
-        cargo::exit_with_error(e.into(), &mut shell)
+        cargo::exit_with_error(e, &mut shell)
     }
 }
 
@@ -219,19 +220,16 @@ fn real_main(args: Args, config: &mut Config) -> CliResult {
     let target = if args.all_targets {
         None
     } else {
-        Some(args.target.as_ref().unwrap_or(&rustc.host).as_str())
+        Some(match &args.target {
+            Some(s) => s,
+            None => rustc.host.as_str(),
+        })
     };
 
     let format = Pattern::new(&args.format).map_err(|e| failure::err_msg(e.to_string()))?;
 
     let cfgs = get_cfgs(&rustc, &args.target)?;
-    let graph = build_graph(
-        &resolve,
-        &packages,
-        package.package_id(),
-        target,
-        cfgs.as_ref().map(|r| &**r),
-    )?;
+    let graph = build_graph(&resolve, &packages, package.package_id(), target, &cfgs)?;
 
     let direction = if args.invert || args.duplicates {
         EdgeDirection::Incoming
@@ -283,22 +281,23 @@ fn find_duplicates<'a>(graph: &Graph<'a>) -> Vec<PackageId> {
     dup_ids
 }
 
-fn get_cfgs(rustc: &Rustc, target: &Option<String>) -> CargoResult<Option<Vec<Cfg>>> {
-    let mut process = util::process(&rustc.path);
+fn get_cfgs(rustc: &Rustc, target: &Option<String>) -> CargoResult<Vec<Cfg>> {
+    let mut process = rustc.process();
     process.arg("--print=cfg").env_remove("RUST_LOG");
     if let Some(ref s) = *target {
         process.arg("--target").arg(s);
     }
 
-    let output = match process.exec_with_output() {
-        Ok(output) => output,
-        Err(e) => return Err(e),
-    };
-    let output = str::from_utf8(&output.stdout).unwrap();
-    let lines = output.lines();
-    Ok(Some(
-        lines.map(Cfg::from_str).collect::<CargoResult<Vec<_>>>()?,
-    ))
+    let output = process.exec_with_output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+    let mut out = Vec::new();
+    for line in stdout.lines() {
+        match Cfg::from_str(line) {
+            Ok(cfg) => out.push(cfg),
+            Err(err) => return Err(err.into()),
+        }
+    }
+    Ok(out)
 }
 
 fn workspace(config: &Config, manifest_path: Option<PathBuf>) -> CargoResult<Workspace<'_>> {
@@ -311,7 +310,7 @@ fn workspace(config: &Config, manifest_path: Option<PathBuf>) -> CargoResult<Wor
 
 fn registry<'a>(config: &'a Config, package: &Package) -> CargoResult<PackageRegistry<'a>> {
     let mut registry = PackageRegistry::new(config)?;
-    registry.add_sources(Some(package.package_id().source_id().clone()))?;
+    registry.add_sources(Some(package.package_id().source_id()))?;
     Ok(registry)
 }
 
@@ -323,24 +322,25 @@ fn resolve<'a, 'cfg>(
     no_default_features: bool,
     no_dev_dependencies: bool,
 ) -> CargoResult<(PackageSet<'a>, Resolve)> {
-    let features = Method::split_features(&features.into_iter().collect::<Vec<_>>());
+    let features: Vec<String> = features.into_iter().collect();
 
     let (packages, resolve) = ops::resolve_ws(workspace)?;
 
-    let method = Method::Required {
-        dev_deps: !no_dev_dependencies,
-        features: Rc::new(features),
+    let opts = ResolveOpts::new(
+        !no_dev_dependencies,
+        &features,
         all_features,
-        uses_default_features: !no_default_features,
-    };
+        !no_default_features,
+    );
+    let specs = ops::Packages::All.to_package_id_specs(workspace)?;
 
     let resolve = ops::resolve_with_previous(
         registry,
         workspace,
-        method,
+        opts,
         Some(&resolve),
         None,
-        &[],
+        &specs,
         true,
     )?;
     Ok((packages, resolve))
@@ -361,14 +361,14 @@ fn build_graph<'a>(
     packages: &'a PackageSet<'_>,
     root: PackageId,
     target: Option<&str>,
-    cfgs: Option<&[Cfg]>,
+    cfgs: &[Cfg],
 ) -> CargoResult<Graph<'a>> {
     let mut graph = Graph {
         graph: petgraph::Graph::new(),
         nodes: HashMap::new(),
     };
     let node = Node {
-        id: root.clone(),
+        id: root,
         metadata: packages.get_one(root)?.manifest().metadata(),
     };
     graph.nodes.insert(root.clone(), graph.graph.add_node(node));
@@ -379,7 +379,8 @@ fn build_graph<'a>(
         let idx = graph.nodes[&pkg_id];
         let pkg = packages.get_one(pkg_id)?;
 
-        for raw_dep_id in resolve.deps_not_replaced(pkg_id) {
+        for raw_item in resolve.deps_not_replaced(pkg_id) {
+            let raw_dep_id = raw_item.0;
             let it = pkg
                 .dependencies()
                 .iter()
@@ -389,10 +390,7 @@ fn build_graph<'a>(
                         .and_then(|p| target.map(|t| p.matches(t, cfgs)))
                         .unwrap_or(true)
                 });
-            let dep_id = match resolve.replacement(raw_dep_id) {
-                Some(id) => id,
-                None => raw_dep_id,
-            };
+            let dep_id = resolve.replacement(raw_dep_id).unwrap_or(raw_dep_id);
             for dep in it {
                 let dep_idx = match graph.nodes.entry(dep_id) {
                     Entry::Occupied(e) => *e.get(),

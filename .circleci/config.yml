@@ -1,5 +1,5 @@
 deps_key: &DEPS_KEY
-  key: dependencies-1.34-{{ checksum "Cargo.lock" }}
+  key: dependencies-1.40-{{ checksum "Cargo.lock" }}
 
 restore_registry: &RESTORE_REGISTRY
   restore_cache:
@@ -26,7 +26,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: rust:1.34.0
+      - image: rust:1.40.0
     steps:
       - checkout
       - run: apt-get update
@@ -34,5 +34,6 @@ jobs:
       - <<: *RESTORE_REGISTRY
       - <<: *RESTORE_DEPS
       - run: cargo build --locked
+      - run: cargo run --locked -- tree
       - <<: *SAVE_REGISTRY
       - <<: *SAVE_DEPS
