@@ -1,9 +1,7 @@
-use cargo::core::manifest::ManifestMetadata;
-use cargo::core::PackageId;
-use std::error::Error;
-use std::fmt;
-
 use crate::format::parse::{Parser, RawChunk};
+use anyhow::{anyhow, Error};
+use cargo_metadata::Package;
+use std::fmt;
 
 mod parse;
 
@@ -17,7 +15,7 @@ enum Chunk {
 pub struct Pattern(Vec<Chunk>);
 
 impl Pattern {
-    pub fn new(format: &str) -> Result<Pattern, Box<dyn Error>> {
+    pub fn new(format: &str) -> Result<Pattern, Error> {
         let mut chunks = vec![];
 
         for raw in Parser::new(format) {
@@ -27,9 +25,9 @@ impl Pattern {
                 RawChunk::Argument("l") => Chunk::License,
                 RawChunk::Argument("r") => Chunk::Repository,
                 RawChunk::Argument(ref a) => {
-                    return Err(format!("unsupported pattern `{}`", a).into());
+                    return Err(anyhow!("unsupported pattern `{}`", a).into());
                 }
-                RawChunk::Error(err) => return Err(err.into()),
+                RawChunk::Error(err) => return Err(anyhow!("{}", err)),
             };
             chunks.push(chunk);
         }
@@ -37,23 +35,17 @@ impl Pattern {
         Ok(Pattern(chunks))
     }
 
-    pub fn display<'a>(
-        &'a self,
-        package: &'a PackageId,
-        metadata: &'a ManifestMetadata,
-    ) -> Display<'a> {
+    pub fn display<'a>(&'a self, package: &'a Package) -> Display<'a> {
         Display {
             pattern: self,
-            package: package,
-            metadata: metadata,
+            package,
         }
     }
 }
 
 pub struct Display<'a> {
     pattern: &'a Pattern,
-    package: &'a PackageId,
-    metadata: &'a ManifestMetadata,
+    package: &'a Package,
 }
 
 impl<'a> fmt::Display for Display<'a> {
@@ -61,14 +53,27 @@ impl<'a> fmt::Display for Display<'a> {
         for chunk in &self.pattern.0 {
             match *chunk {
                 Chunk::Raw(ref s) => fmt.write_str(s)?,
-                Chunk::Package => write!(fmt, "{}", self.package)?,
+                Chunk::Package => {
+                    write!(fmt, "{} v{}", self.package.name, self.package.version)?;
+
+                    match &self.package.source {
+                        Some(source) if !source.is_crates_io() => write!(fmt, " ({})", source)?,
+                        // https://github.com/rust-lang/cargo/issues/7483
+                        None => write!(
+                            fmt,
+                            " ({})",
+                            self.package.manifest_path.parent().unwrap().display()
+                        )?,
+                        _ => {}
+                    }
+                }
                 Chunk::License => {
-                    if let Some(ref license) = self.metadata.license {
+                    if let Some(ref license) = self.package.license {
                         write!(fmt, "{}", license)?
                     }
                 }
                 Chunk::Repository => {
-                    if let Some(ref repository) = self.metadata.repository {
+                    if let Some(ref repository) = self.package.repository {
                         write!(fmt, "{}", repository)?
                     }
                 }
