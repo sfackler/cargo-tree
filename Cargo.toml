@@ -15,3 +15,8 @@ petgraph = "0.4"
 semver = "0.9"
 serde_json = "1.0"
 structopt = "0.3"
+
+# Reduce compile time by setting no optimization for build scripts,
+# proc macros, and their dependencies
+[profile.release.build-override]
+opt-level = 0
