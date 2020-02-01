@@ -58,31 +58,33 @@ pub fn print(args: &Args, graph: &Graph) -> Result<(), Error> {
         Prefix::Indent
     };
 
-    if args.duplicates {
-        for (i, package) in find_duplicates(graph).iter().enumerate() {
-            if i != 0 {
-                println!();
-            }
-
-            let root = &graph.graph[graph.nodes[*package]];
-            print_tree(graph, root, &format, direction, symbols, prefix, args.all);
-        }
+    let packages = if args.duplicates {
+        find_duplicates(graph)
     } else {
-        let root = match &args.package {
-            Some(package) => find_package(package, graph)?,
-            None => graph.root.as_ref().ok_or_else(|| {
-                anyhow!("this command requires running against an actual package in this workspace")
-            })?,
-        };
-        let root = &graph.graph[graph.nodes[root]];
+        match &args.package {
+            Some(package) => find_packages(package, graph)?,
+            None => {
+                let root = graph.root.as_ref().ok_or_else(|| {
+                    anyhow!("this command requires running against an actual package in this workspace")
+                })?;
+                vec![root]
+            }
+        }
+    };
 
+    for (i, package) in packages.iter().enumerate() {
+        if i != 0 {
+            println!();
+        }
+
+        let root = &graph.graph[graph.nodes[*package]];
         print_tree(graph, root, &format, direction, symbols, prefix, args.all);
     }
 
     Ok(())
 }
 
-fn find_package<'a>(package: &str, graph: &'a Graph) -> Result<&'a PackageId, Error> {
+fn find_packages<'a>(package: &str, graph: &'a Graph) -> Result<Vec<&'a PackageId>, Error> {
     let mut it = package.split(":");
     let name = it.next().unwrap();
     let version = it
@@ -104,24 +106,13 @@ fn find_package<'a>(package: &str, graph: &'a Graph) -> Result<&'a PackageId, Er
             }
         }
 
-        candidates.push(package);
+        candidates.push(&package.id);
     }
 
     if candidates.len() == 0 {
         Err(anyhow!("no crates found for package `{}`", package))
-    } else if candidates.len() > 1 {
-        let specs = candidates
-            .iter()
-            .map(|p| format!("{}:{}", p.name, p.version))
-            .collect::<Vec<_>>()
-            .join(", ");
-        Err(anyhow!(
-            "multiple crates found for package `{}`: {}",
-            package,
-            specs,
-        ))
     } else {
-        Ok(&candidates[0].id)
+        Ok(candidates)
     }
 }
 
