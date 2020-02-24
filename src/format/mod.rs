@@ -25,7 +25,7 @@ impl Pattern {
                 RawChunk::Argument("l") => Chunk::License,
                 RawChunk::Argument("r") => Chunk::Repository,
                 RawChunk::Argument(ref a) => {
-                    return Err(anyhow!("unsupported pattern `{}`", a).into());
+                    return Err(anyhow!("unsupported pattern `{}`", a));
                 }
                 RawChunk::Error(err) => return Err(anyhow!("{}", err)),
             };
