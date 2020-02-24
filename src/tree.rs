@@ -83,7 +83,7 @@ pub fn print(args: &Args, graph: &Graph) -> Result<(), Error> {
 }
 
 fn find_package<'a>(package: &str, graph: &'a Graph) -> Result<&'a PackageId, Error> {
-    let mut it = package.split(":");
+    let mut it = package.split(':');
     let name = it.next().unwrap();
     let version = it
         .next()
@@ -107,7 +107,7 @@ fn find_package<'a>(package: &str, graph: &'a Graph) -> Result<&'a PackageId, Er
         candidates.push(package);
     }
 
-    if candidates.len() == 0 {
+    if candidates.is_empty() {
         Err(anyhow!("no crates found for package `{}`", package))
     } else if candidates.len() > 1 {
         let specs = candidates
