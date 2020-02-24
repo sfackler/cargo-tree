@@ -39,6 +39,9 @@ pub struct Args {
     #[structopt(long = "no-dev-dependencies")]
     /// Skip dev dependencies.
     pub no_dev_dependencies: bool,
+    #[structopt(long = "no-build-dependencies")]
+    /// Skip build dependencies.
+    pub no_build_dependencies: bool,
     #[structopt(long = "manifest-path", value_name = "PATH", parse(from_os_str))]
     /// Path to Cargo.toml
     pub manifest_path: Option<PathBuf>,
