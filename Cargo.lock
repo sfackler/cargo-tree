@@ -39,7 +39,7 @@ version = "0.29.0"
 dependencies = [
  "anyhow 1.0.31 (registry+https://github.com/rust-lang/crates.io-index)",
  "cargo_metadata 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "petgraph 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "petgraph 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "semver 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.53 (registry+https://github.com/rust-lang/crates.io-index)",
  "structopt 0.3.14 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -116,7 +116,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "petgraph"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "fixedbitset 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -321,7 +321,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum itoa 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)" = "b8b7a7c0c47db5545ed3fef7468ee7bb5b74691498139e4b3f6a20685dc6dd8e"
 "checksum lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 "checksum libc 0.2.66 (registry+https://github.com/rust-lang/crates.io-index)" = "d515b1f41455adea1313a4a2ac8a8a477634fbae63cc6100e3aebb207ce61558"
-"checksum petgraph 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)" = "29c127eea4a29ec6c85d153c59dc1213f33ec74cead30fe4730aecc88cc1fd92"
+"checksum petgraph 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "467d164a6de56270bd7c4d070df81d07beace25012d5103ced4e9ff08d6afdb7"
 "checksum proc-macro-error 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "8931031034aa65c73f3f1a05c3ec0fa51287fcd06557ecf4e88b2768bdca375e"
 "checksum proc-macro-error-attr 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "2147536f412ee7ae5529364ed50172ca0220fd64591e236296f45f36b38b2f98"
 "checksum proc-macro2 1.0.8 (registry+https://github.com/rust-lang/crates.io-index)" = "3acb317c6ff86a4e579dfa00fc5e6cca91ecbb4e7eb2df0468805b674eb88548"
