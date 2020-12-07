@@ -51,6 +51,9 @@ pub fn build(args: &Args, metadata: Metadata) -> Result<Graph, Error> {
                 if args.no_dev_dependencies && kind == DependencyKind::Development {
                     continue;
                 }
+                if args.no_build_dependencies && kind == DependencyKind::Build {
+                    continue;
+                }
 
                 graph.graph.add_edge(from, to, kind);
             }
